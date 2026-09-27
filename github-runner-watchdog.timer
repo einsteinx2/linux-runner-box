@@ -1,0 +1,10 @@
+[Unit]
+Description=Check GitHub runners every two minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=2min
+Unit=github-runner-watchdog.service
+
+[Install]
+WantedBy=timers.target
