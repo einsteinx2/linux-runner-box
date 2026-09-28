@@ -137,25 +137,30 @@ unset REG_TOKEN
 echo '== Watchdog =='
 state=/var/lib/github-runner-watchdog
 sudo install -d -m 700 "$state"
-if ! sudo test -s "$state/token"; then
-  if [ -z "${WATCHDOG_TOKEN:-}" ]; then
-    read -rsp 'Watchdog PAT (read-only self-hosted runners): ' WATCHDOG_TOKEN; echo
-  fi
-  test -n "$WATCHDOG_TOKEN" || { echo 'Watchdog token is empty' >&2; exit 1; }
-  printf '%s' "$WATCHDOG_TOKEN" | sudo tee "$state/token" >/dev/null
-  unset WATCHDOG_TOKEN
+check_token() {
+  curl -s -o /dev/null -w '%{http_code}' \
+    -H "Authorization: Bearer $1" \
+    -H 'Accept: application/vnd.github+json' \
+    "https://api.github.com/$SCOPE/actions/runners?per_page=1"
+}
+# Check a new token before it is saved, so a bad paste is never stored.
+if sudo test -s "$state/token"; then
+  token=$(sudo cat "$state/token")
+else
+  token="${WATCHDOG_TOKEN:-}"
+  [ -n "$token" ] || { read -rsp 'Watchdog PAT (read-only self-hosted runners): ' token; echo; }
+  test -n "$token" || { echo 'Watchdog token is empty' >&2; exit 1; }
 fi
-sudo chmod 600 "$state/token"
-
-# Sanity-check the token and scope before wiring up the timer.
-code=$(curl -s -o /dev/null -w '%{http_code}' \
-  -H "Authorization: Bearer $(sudo cat "$state/token")" \
-  -H 'Accept: application/vnd.github+json' \
-  "https://api.github.com/$SCOPE/actions/runners?per_page=1")
+unset WATCHDOG_TOKEN
+code=$(check_token "$token")
 if [ "$code" != 200 ]; then
   echo "Token check failed: HTTP $code for $SCOPE/actions/runners (401/403 = bad token, 404 = wrong SCOPE or missing permission)" >&2
+  echo "To replace a stored token: sudo rm $state/token, then rerun." >&2
   exit 1
 fi
+printf '%s' "$token" | sudo tee "$state/token" >/dev/null
+sudo chmod 600 "$state/token"
+unset token
 
 config=$(mktemp)
 printf 'SCOPE=%q\nRUNNER_PREFIX=%q\nRUNNER_COUNT=%q\nRUNNER_HOME=%q\n' \
