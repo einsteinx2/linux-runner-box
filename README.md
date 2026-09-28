@@ -6,7 +6,7 @@ The runners are persistent, not ephemeral: they favor fast jobs and warm caches 
 
 ## What gets installed
 
-- Packages: `git`, `git-lfs`, `curl`, `jq`, `tar`, `gzip`, `unzip`, `zip`, `zstd`, `xz-utils`, `build-essential`, `pkg-config`, `python3`, `python3-venv`, `docker.io`, plus anything in `EXTRA_APT_PACKAGES`.
+- Packages: `git`, `git-lfs`, `curl`, `jq`, `tar`, `gzip`, `unzip`, `zip`, `zstd`, `xz-utils`, `build-essential`, `pkg-config`, `python3`, `python3-venv`, `docker.io`, `docker-cli`, plus anything in `EXTRA_APT_PACKAGES`.
 - `uv` in `/usr/local/bin` (Debian 13 does not package it).
 - Go, Node, and Python toolchains come from `actions/setup-go`, `actions/setup-node`, and `uv` in the workflows. Each runner keeps its own tool cache under `_work/_tool`, so a toolchain downloads once per runner.
 - The runner user joins the `docker` group, so jobs can use `container:` and `services:`.
