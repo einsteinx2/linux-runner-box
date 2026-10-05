@@ -56,13 +56,14 @@ fi
 echo '== Host packages =='
 # libicu76, libkrb5-3, libssl3t64, and zlib1g are the runner's own dependencies.
 # docker.io holds only the daemon. The docker client is docker-cli, which
-# docker.io only recommends, so --no-install-recommends skips it.
+# docker.io only recommends, so --no-install-recommends skips it. docker-buildx
+# is the buildx plugin, for jobs that run `docker buildx build`.
 sudo apt-get update
 # shellcheck disable=SC2086
 sudo apt-get install -y --no-install-recommends \
   bash ca-certificates curl git git-lfs jq tar gzip unzip zip zstd xz-utils \
   build-essential pkg-config python3 python3-venv util-linux procps iproute2 \
-  libicu76 libkrb5-3 libssl3t64 zlib1g docker.io docker-cli \
+  libicu76 libkrb5-3 libssl3t64 zlib1g docker.io docker-cli docker-buildx \
   $EXTRA_APT_PACKAGES
 sudo systemctl enable --now docker
 docker_group_added=0
