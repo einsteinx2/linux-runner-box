@@ -29,7 +29,15 @@ Nothing trims `~/go/pkg/mod`, `~/.npm`, or `~/.cache/uv`. Clear them by hand whe
 2. Clone this repo onto the machine and edit the variables at the top of `setup-runner-linux.sh` (`RUNNER_URL`, `SCOPE`, `RUNNER_COUNT`, `RUNNER_PREFIX`, `LABELS`, `CACHE_DIR`, `EXTRA_APT_PACKAGES`).
 3. From another machine, create a fine-grained PAT with only **Self-hosted runners: Read-only** (org runners) or **Administration: Read-only** (repo runners).
 4. From another machine, get a runner registration token from *Settings → Actions → Runners → New self-hosted runner*. It is valid for one hour and registers all runners.
-5. On the machine, run `./setup-runner-linux.sh` as the normal user and paste the two tokens when prompted (or pass `REG_TOKEN=... WATCHDOG_TOKEN=...`). A rerun keeps registered runners and the stored PAT.
+5. On the machine, run `./setup-runner-linux.sh` as the normal user and paste the two tokens when prompted (or pass `REG_TOKEN=... WATCHDOG_TOKEN=...`). A rerun keeps the registered runners 1 to `RUNNER_COUNT` and the stored PAT.
 6. Verify with `systemctl list-units 'actions.runner.*'` and `journalctl -t github-runner-watchdog -f`.
 
-If you lower `RUNNER_COUNT` later, remove the extra runners by hand (`sudo ./svc.sh uninstall` and `./config.sh remove` in their directories).
+## Changing the number of runners
+
+Run `./setup-runner-linux.sh <count>` on the machine, or edit `RUNNER_COUNT` in the script and run it again. The script keeps runners 1 to `<count>`, adds the missing runners, and removes the runners with a higher number.
+
+- To add runners, the script asks for a registration token (or pass `REG_TOKEN=...`).
+- To remove runners, the script asks for a removal token (or pass `REMOVE_TOKEN=...`). This is not the registration token. Get it from the *Remove* dialog of a runner on GitHub. It is valid for one hour and removes all the extra runners.
+- The script refuses to remove a runner that is in the middle of a job. Wait for the job to finish, then run the script again.
+
+The argument is not saved. A later run without the argument uses `RUNNER_COUNT` from the script, so edit the script to make the count permanent.

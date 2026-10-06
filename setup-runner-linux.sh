@@ -7,11 +7,22 @@
 # units, and the watchdog. Safe to re-run: configured runners and the stored
 # watchdog token are kept.
 #
+# Usage: ./setup-runner-linux.sh [runner-count]
+# A rerun reconciles the host to the runner count: it adds the missing runners
+# and removes the runners with a number above the count. The argument
+# overrides RUNNER_COUNT below for one run; it is not saved.
+#
 # Registration token: generate it on your own machine, not here.
 #   Org:  Settings -> Actions -> Runners -> New self-hosted runner
 #   (or: gh api -X POST orgs/ORG/actions/runners/registration-token --jq .token)
 # It expires after 1 hour, and one token registers every runner in that
 # window. The script prompts for it; pass REG_TOKEN=... to skip the prompt.
+#
+# Removal token: only needed when the script removes runners. This is not the
+# registration token. Get it from the "Remove" dialog of a runner on GitHub
+#   (or: gh api -X POST orgs/ORG/actions/runners/remove-token --jq .token)
+# It expires after 1 hour, and one token removes every extra runner in that
+# window. The script prompts for it; pass REMOVE_TOKEN=... to skip the prompt.
 #
 # Watchdog token: a fine-grained PAT with ONLY
 #   org runners:  Organization permissions -> Self-hosted runners: Read-only
@@ -32,7 +43,10 @@ EXTRA_APT_PACKAGES=""                      # space-separated, e.g. "sqlite3 imag
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
-[[ "$RUNNER_COUNT" =~ ^[1-9][0-9]*$ ]] || { echo 'RUNNER_COUNT must be a positive integer' >&2; exit 1; }
+RUNNER_COUNT="${1:-$RUNNER_COUNT}"
+[[ "$RUNNER_COUNT" =~ ^[1-9][0-9]*$ ]] || {
+  echo "Usage: $0 [runner-count]  (RUNNER_COUNT must be a positive integer)" >&2; exit 1
+}
 [[ "$RUNNER_PREFIX" =~ ^[a-zA-Z0-9][a-zA-Z0-9-]*-$ ]] || { echo 'RUNNER_PREFIX must be a name ending in -' >&2; exit 1; }
 [[ "$SCOPE" =~ ^(repos/[^/]+/[^/]+|orgs/[^/]+)$ ]] || { echo 'SCOPE must be orgs/ORG or repos/OWNER/REPO' >&2; exit 1; }
 [[ "$RUNNER_URL" == "https://github.com/${SCOPE#repos/}" || "$RUNNER_URL" == "https://github.com/${SCOPE#orgs/}" ]] || {
@@ -99,6 +113,64 @@ if [ ! -f "$TARBALL" ]; then
 fi
 
 echo '== Runners =='
+# Remove the runners with a number above RUNNER_COUNT.
+extras=()
+for dir in "$HOME"/actions-runner-*; do
+  [ -d "$dir" ] || continue
+  i=${dir##*/actions-runner-}
+  [[ "$i" =~ ^[0-9]+$ ]] || continue
+  if ((10#$i > RUNNER_COUNT)); then extras+=("$i"); fi
+done
+
+# Runner.Worker only exists while a runner executes a job. The pattern has no
+# $HOME prefix, because the process path differs from $HOME if $HOME holds a symlink.
+stop_if_busy() {
+  if pgrep -u "$(id -u)" -f "/actions-runner-$1/bin/Runner\.Worker" >/dev/null; then
+    echo "$RUNNER_PREFIX$1 is busy with a job. Wait for it to finish, then rerun." >&2
+    exit 1
+  fi
+}
+
+if [ "${#extras[@]}" -gt 0 ]; then
+  echo "Runners above the count of $RUNNER_COUNT, to remove: ${extras[*]/#/$RUNNER_PREFIX}"
+fi
+
+# Check all the extra runners before the script removes a runner.
+need_remove_token=0
+for i in "${extras[@]}"; do
+  stop_if_busy "$i"
+  if [ -f "$HOME/actions-runner-$i/.runner" ]; then need_remove_token=1; fi
+done
+if [ "$need_remove_token" = 1 ]; then
+  if [ -z "${REMOVE_TOKEN:-}" ]; then
+    read -rsp "Removal token for $RUNNER_URL: " REMOVE_TOKEN; echo
+  fi
+  test -n "$REMOVE_TOKEN" || { echo 'Removal token is empty' >&2; exit 1; }
+fi
+
+for i in "${extras[@]}"; do
+  name="$RUNNER_PREFIX$i"
+  dir="$HOME/actions-runner-$i"
+  # Check again. The runner can accept a job while the script waits for the token.
+  stop_if_busy "$i"
+  (
+    cd "$dir"
+    # config.sh remove refuses while the service is installed.
+    if [ -s .service ]; then
+      sudo ./svc.sh stop || true
+      sudo ./svc.sh uninstall
+    fi
+    if [ -f .runner ]; then
+      ./config.sh remove --token "$REMOVE_TOKEN"
+    fi
+  )
+  # Container jobs can leave root-owned files in _work.
+  sudo rm -rf "$dir"
+  sudo rm -f "/var/lib/github-runner-watchdog/$name.strikes"
+  echo "removed $name"
+done
+unset REMOVE_TOKEN
+
 need_token=0
 for ((i=1; i<=RUNNER_COUNT; i++)); do
   [ -f "$HOME/actions-runner-$i/.runner" ] || need_token=1
